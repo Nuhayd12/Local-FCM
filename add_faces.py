@@ -2,44 +2,53 @@ import os
 import cv2
 import pickle
 import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
 from deepface import DeepFace
 
 # Initialize video capture and face detection
 video = cv2.VideoCapture(0)
 facedetect = cv2.CascadeClassifier('data/haarcascade_frontalface_default.xml')
 
-# Create the dataset directory if it doesn't exist
+# Create dataset folder if not exists
 if not os.path.exists("dataset"):
     os.makedirs("dataset")
 
-# Input for person name
+# Get user input
 name = input("Enter Your Name: ")
 person_dir = f"dataset/{name}"
 if not os.path.exists(person_dir):
     os.makedirs(person_dir)
 
-i = 0  # Counter for saved images
-face_embeddings = []  # To store embeddings for KNN and DeepFace
-face_labels = []  # To store corresponding labels
+i = 0
+face_embeddings = []
+face_labels = []
 
-def preprocess_face(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)  # Convert to grayscale
-    equalized = cv2.equalizeHist(gray)  # Apply histogram equalization
-    return equalized
+def adjust_brightness(img):
+    """
+    Check and normalize brightness using CLAHE.
+    """
+    lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    l = clahe.apply(l)
+    lab = cv2.merge((l, a, b))
+    return cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
 def extract_embedding(image_path):
     """
-    Extract facial embedding using DeepFace.
+    Extract embedding using DeepFace with multiple models.
     """
     try:
-        embedding = DeepFace.represent(img_path=image_path, model_name="Facenet")
-        return np.array(embedding[0]["embedding"])
+        models = ["Facenet", "VGG-Face", "OpenFace"]
+        embeddings = []
+        for model in models:
+            embedding = DeepFace.represent(img_path=image_path, model_name=model)[0]["embedding"]
+            embeddings.append(np.array(embedding))
+        return np.mean(embeddings, axis=0)  # Averaging across models
     except Exception as e:
-        print(f"Error extracting embedding: {e}")
+        print(f"Embedding Error: {e}")
         return None
 
-while True:
+while i < 100:
     ret, frame = video.read()
     if not ret:
         break
@@ -49,54 +58,40 @@ while True:
 
     for (x, y, w, h) in faces:
         face_img = frame[y:y+h, x:x+w]
-        
-        # Preprocess the face (grayscale and histogram equalization)
-        processed_face = preprocess_face(face_img)
-        resized_face = cv2.resize(processed_face, (50, 50))
+        face_img = adjust_brightness(face_img)
+        face_img = cv2.resize(face_img, (160, 160))  # Standard DeepFace input size
 
-        # Save face images every 10 frames
-        if i % 10 == 0 and i // 10 < 100:
+        if i % 10 == 0:
             face_path = os.path.join(person_dir, f"face_{i//10}.jpg")
-            cv2.imwrite(face_path, resized_face)
+            cv2.imwrite(face_path, face_img)
             print(f"Saved {face_path}")
 
-            # Extract embedding and store it
             embedding = extract_embedding(face_path)
             if embedding is not None:
                 face_embeddings.append(embedding)
                 face_labels.append(name)
-        
-        i += 1
 
-        # Display the progress
-        cv2.putText(frame, f"Collecting: {i//10}/100", (50, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        i += 1
+        cv2.putText(frame, f"Collecting: {i}/100", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
 
     cv2.imshow("Data Collection", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q') or i // 10 >= 100:
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 print("Data collection completed!")
 video.release()
 cv2.destroyAllWindows()
 
-# Train KNN Model
-print("Training KNN model...")
-face_embeddings = np.array(face_embeddings)
-face_labels = np.array(face_labels)
-
-knn_model = KNeighborsClassifier(n_neighbors=5, metric="euclidean")
-knn_model.fit(face_embeddings, face_labels)
-
-# Save KNN model and labels
+# Save embeddings
+print("Saving DeepFace embeddings...")
 if not os.path.exists("data"):
     os.makedirs("data")
 
-with open("data/knn_model.pkl", "wb") as f:
-    pickle.dump(knn_model, f)
+with open("data/face_embeddings.pkl", "wb") as f:
+    pickle.dump(face_embeddings, f)
 
-with open("data/names.pkl", "wb") as f:
-    pickle.dump(list(set(face_labels)), f)
+with open("data/face_labels.pkl", "wb") as f:
+    pickle.dump(face_labels, f)
 
-print("KNN model trained and saved!")
+print("Embeddings saved!")
