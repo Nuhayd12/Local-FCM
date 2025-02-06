@@ -36,17 +36,34 @@ def adjust_brightness(img):
 def extract_embedding(image_path):
     """
     Extract embedding using DeepFace with multiple models.
+    Ensures all returned embeddings have a consistent shape.
     """
     try:
         models = ["Facenet", "VGG-Face", "OpenFace"]
         embeddings = []
+
         for model in models:
-            embedding = DeepFace.represent(img_path=image_path, model_name=model)[0]["embedding"]
-            embeddings.append(np.array(embedding))
-        return np.mean(embeddings, axis=0)  # Averaging across models
+            result = DeepFace.represent(img_path=image_path, model_name=model)
+            if isinstance(result, list) and len(result) > 0 and "embedding" in result[0]:
+                embedding = np.array(result[0]["embedding"])
+                
+                # Ensure correct shape
+                if embedding.shape == (128,) or embedding.shape == (512,):  # Adjust based on model
+                    embeddings.append(embedding)
+                else:
+                    print(f"Warning: Unexpected shape {embedding.shape} for model {model}")
+            else:
+                print(f"Warning: No embedding returned for {model}")
+
+        if embeddings:
+            return np.mean(embeddings, axis=0)  # Averaging across models
+        else:
+            raise ValueError("No valid embeddings found")
+
     except Exception as e:
         print(f"Embedding Error: {e}")
         return None
+
 
 while i < 100:
     ret, frame = video.read()
