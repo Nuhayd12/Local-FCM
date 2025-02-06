@@ -18,7 +18,7 @@ person_dir = f"dataset/{name}"
 if not os.path.exists(person_dir):
     os.makedirs(person_dir)
 
-i = 0
+i = 0 # Counter for frame capture
 face_embeddings = []
 face_labels = []
 

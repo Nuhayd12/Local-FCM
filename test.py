@@ -86,3 +86,4 @@ while True:
 print("Face recognition stopped.")
 video.release()
 cv2.destroyAllWindows()
+
